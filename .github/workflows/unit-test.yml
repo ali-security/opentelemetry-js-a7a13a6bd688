@@ -1,13 +1,10 @@
 name: Unit Tests
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-  merge_group:
+  workflow_dispatch:
 
 jobs:
   node-tests:
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -42,7 +39,9 @@ jobs:
           matrix.node_version == '18' ||
           matrix.node_version == '20.6.0'
           }}
-      - run: npm install -g npm@latest
+      # npm@12 requires {"node":"^22.22.2 || ^24.15.0 || >=26"} and did not exist at
+      # release time; cap at the 11.x line that was current for this release.
+      - run: npm install -g npm@"<12.0.0"
         if: ${{
           matrix.node_version == '20' ||
           matrix.node_version == '22' ||
@@ -57,21 +56,37 @@ jobs:
         run: npm run compile
 
       - run: npm test
-        if: ${{ matrix.node_version != '23' && matrix.node_version != '24' }}
+        if: ${{ matrix.node_version != '22' && matrix.node_version != '23' && matrix.node_version != '24' }}
       # Node.js >= 23 type stripping conflicts with mocha usage of ts-node.
       # See https://github.com/open-telemetry/opentelemetry-js/issues/5415
+      # Node.js 22.18+ backported type stripping and enables it by default too,
+      # so the '22' leg (setup-node now resolves 22.x >= 22.18) needs the same flag.
       - run: npm test
         env:
           NODE_OPTIONS: '--no-experimental-strip-types'
-        if: ${{ matrix.node_version == '23' || matrix.node_version == '24' }}
+        if: ${{ matrix.node_version == '22' || matrix.node_version == '23' || matrix.node_version == '24' }}
 
-      - name: Report Coverage
-        uses: codecov/codecov-action@v5
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+      # Package the release tarball for @opentelemetry/core. Upstream only packs
+      # inside publish-to-npm.yml (which needs the NPM_TOKEN secret), so the pack
+      # + upload happen here, on the leg matching the release runtime.
+      - name: Pack @opentelemetry/core
+        if: ${{ matrix.node_version == '23' }}
+        run: |
+          mkdir -p dist-pack
+          npm pack --workspace=packages/opentelemetry-core --pack-destination=./dist-pack
+          mv ./dist-pack/opentelemetry-core-*.tgz "./dist-pack/core-$(node -p "require('./packages/opentelemetry-core/package.json').version").tgz"
+          ls -l ./dist-pack
+
+      - name: Upload @opentelemetry/core tarball
+        if: ${{ matrix.node_version == '23' }}
+        uses: actions/upload-artifact@v4
         with:
-          verbose: true
+          name: opentelemetry-core-tgz
+          path: ./dist-pack/core-*.tgz
+          if-no-files-found: error
+
   node-windows-tests:
+    timeout-minutes: 45
     runs-on: windows-latest
     env:
       NPM_CONFIG_UNSAFE_PERM: true
@@ -86,7 +101,9 @@ jobs:
             package-lock.json
           node-version: '22'
 
-      - run: npm install -g npm@latest
+      # npm@12 requires {"node":"^22.22.2 || ^24.15.0 || >=26"} and did not exist at
+      # release time; cap at the 11.x line that was current for this release.
+      - run: npm install -g npm@"<12.0.0"
 
       - name: Bootstrap
         run: npm ci
@@ -97,8 +114,11 @@ jobs:
           npm run compile
 
       - name: Unit tests
+        env:
+          NODE_OPTIONS: '--no-experimental-strip-types'
         run: npm run test
   browser-tests:
+    timeout-minutes: 45
     runs-on: ubuntu-latest
     env:
       NPM_CONFIG_UNSAFE_PERM: true
@@ -121,13 +141,8 @@ jobs:
 
       - name: Unit tests
         run: npm run test:browser
-      - name: Report Coverage
-        uses: codecov/codecov-action@v5
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-        with:
-          verbose: true
   webworker-tests:
+    timeout-minutes: 45
     runs-on: ubuntu-latest
     env:
       NPM_CONFIG_UNSAFE_PERM: true
@@ -149,9 +164,3 @@ jobs:
 
       - name: Unit tests
         run: npm run test:webworker
-      - name: Report Coverage
-        uses: codecov/codecov-action@v5
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-        with:
-          verbose: true

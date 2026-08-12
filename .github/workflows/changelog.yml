@@ -5,11 +5,8 @@
 name: changelog
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
-    branches:
-      - main
-      - next
+  workflow_dispatch:
+
 jobs:
   changelog:
     runs-on: ubuntu-latest

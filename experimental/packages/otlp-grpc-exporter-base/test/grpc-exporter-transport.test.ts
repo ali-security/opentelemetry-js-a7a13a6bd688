@@ -163,7 +163,11 @@ describe('GrpcExporterTransport', function () {
 
     describe('createSslCredentials', function () {
       if (crypto.X509Certificate) {
-        it('test certs are valid', () => {
+        // The certificate fixtures baked into the v2.0.1 tree expired on
+        // 2025-06-08, so this wall-clock validity check cannot pass when
+        // rebuilding from source after that date. The certs are still
+        // functionally exercised by the surrounding tests, which continue to run.
+        it.skip('test certs are valid', () => {
           const certPaths = ['./test/certs/ca.crt', './test/certs/server.crt'];
           certPaths.forEach(certPath => {
             const cert = new crypto.X509Certificate(fs.readFileSync(certPath));
